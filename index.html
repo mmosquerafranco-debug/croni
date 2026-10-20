@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Croni</title>
+<meta name="theme-color" content="#F781D8">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://api.fontshare.com/v2/css?f[]=clash-display@600,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="login" class="login" hidden>
+  <div class="login-card">
+    <div class="logo big"><span class="eye"></span><span class="eye"></span></div>
+    <h1 class="display">Croni</h1>
+    <p>Tus negocios, tareas y notas en un solo lugar. Tus datos se guardan en tu propio Google Drive.</p>
+    <button id="btnLogin" class="btn primary">Entrar con Gmail</button>
+    <p id="loginMsg" class="muted small"></p>
+    <button id="btnDemo" class="btn ghost small">Probar sin conectar (solo en este dispositivo)</button>
+  </div>
+</div>
+
+<div id="app" class="app" hidden>
+  <header class="top">
+    <div class="brand"><div class="logo"><span class="eye"></span><span class="eye"></span></div><span class="display brand-name">Croni</span></div>
+    <div class="top-actions">
+      <span class="pill" id="syncPill"><i id="syncDot"></i><span id="syncText">Local</span></span>
+      <button class="btn outline small hide-sm" id="btnExport">Exportar</button>
+      <button class="btn primary" id="btnNew">+ Actividad</button>
+      <button class="avatar" id="btnUser" title="Cuenta">M</button>
+    </div>
+  </header>
+
+  <div id="bizBar" class="chips"></div>
+  <nav id="tabs" class="tabs"></nav>
+  <div id="banner" class="banner" hidden></div>
+  <main id="view"></main>
+</div>
+
+<div id="modal" class="modal" hidden></div>
+<div id="toast" class="toast" hidden></div>
+
+<script src="config.js"></script>
+<script src="drive.js"></script>
+<script src="app.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer onload="window.__gsi=true;window.dispatchEvent(new Event('gsi'))"></script>
+</body>
+</html>
