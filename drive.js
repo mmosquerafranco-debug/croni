@@ -6,22 +6,32 @@
   const API = 'https://www.googleapis.com/drive/v3', UP = 'https://www.googleapis.com/upload/drive/v3';
   let token = null, tokenExp = 0, client = null, fileId = null, folderId = null, lastVersion = null;
 
+  let pending = null;
   function ready() {
     return new Promise(res => {
       if (window.google && google.accounts) return res();
       window.addEventListener('gsi', () => res(), { once: true });
     });
   }
+  // El cliente se prepara al cargar la página: así la ventana de Google se abre en el mismo
+  // instante del toque (los celulares la bloquean si hay una espera de por medio).
+  function initClient() {
+    if (client || !C.GOOGLE_CLIENT_ID) return;
+    client = google.accounts.oauth2.initTokenClient({
+      client_id: C.GOOGLE_CLIENT_ID, scope: SCOPE,
+      callback: r => {
+        const p = pending; pending = null; if (!p) return;
+        if (r.error) return p.reject(new Error(r.error_description || r.error));
+        token = r.access_token; tokenExp = Date.now() + (r.expires_in - 60) * 1000; p.resolve(token);
+      },
+      error_callback: e => { const p = pending; pending = null; if (p) p.reject(new Error(e.type === 'popup_failed_to_open' ? 'el navegador bloqueó la ventana de Google; permite las ventanas emergentes' : (e.type || 'cancelado'))); }
+    });
+  }
+  ready().then(initClient);
   function getToken(prompt) {
-    return new Promise(async (resolve, reject) => {
-      await ready();
-      if (!client) {
-        client = google.accounts.oauth2.initTokenClient({
-          client_id: C.GOOGLE_CLIENT_ID, scope: SCOPE,
-          callback: r => { if (r.error) return reject(new Error(r.error)); token = r.access_token; tokenExp = Date.now() + (r.expires_in - 60) * 1000; resolve(token); },
-          error_callback: e => reject(new Error(e.type || 'cancelado'))
-        });
-      }
+    if (!client) { if (window.google && google.accounts) initClient(); else return Promise.reject(new Error('Google aún está cargando, intenta de nuevo en unos segundos')); }
+    return new Promise((resolve, reject) => {
+      pending = { resolve, reject };
       client.requestAccessToken({ prompt: prompt || '' });
     });
   }
