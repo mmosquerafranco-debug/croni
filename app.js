@@ -75,10 +75,48 @@ async function push(force) {
   if (!navigator.onLine) return setSync('offline');
   try {
     setSync('saving'); await CroniDrive.save(D, force === true); S.dirty = false; setSync('ok');
+    if (await syncCal()) { S.dirty = true; localSave(); setTimeout(push, 500); }
   } catch (e) {
     if (e.conflict) { setSync('conflict'); showConflict(); } else { setSync('err'); toast('No se pudo guardar en Drive. Se reintentará.'); setTimeout(push, 15000); }
   }
 }
+// ---------- avisos en Google Calendar ----------
+// Cada persona tiene su propio registro (D.gcal[correo]) para no duplicar eventos entre dispositivos.
+const calState = () => S.user && D.gcal && D.gcal[S.user.email];
+const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+function localIso(d) { return toISO(d) + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':00'; }
+function calEvent(a) {
+  const start = new Date(a.s + 'T' + a.time + ':00'), end = new Date(start.getTime() + 3600e3);
+  const extra = [a.obs, a.e !== a.s ? 'Hasta el ' + a.e : '', 'Creado por Croni'].filter(Boolean).join('\n');
+  return {
+    summary: biz(a.biz).name + ': ' + a.title, description: extra,
+    start: { dateTime: localIso(start), timeZone: TZ }, end: { dateTime: localIso(end), timeZone: TZ },
+    reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: LEADS[a.lead] }] }
+  };
+}
+// Devuelve true si cambió el registro (para guardarlo en Drive).
+async function syncCal() {
+  const g = calState();
+  if (!g || !g.on || S.mode !== 'drive' || !navigator.onLine) return false;
+  let changed = false;
+  try {
+    const t = today(), want = {};
+    D.acts.filter(a => a.st !== 'done' && a.e >= t).forEach(a => want[a.id] = a);
+    for (const id of Object.keys(want)) {
+      const a = want[id], h = JSON.stringify(calEvent(a)), cur = g.map[id];
+      if (cur && cur.h === h) continue;
+      let r = cur ? await CroniDrive.calPatch(cur.eid, calEvent(a)) : null;
+      if (!r) r = await CroniDrive.calInsert(calEvent(a));
+      g.map[id] = { eid: r.id, h }; changed = true;
+    }
+    for (const id of Object.keys(g.map)) {
+      if (want[id]) continue;
+      await CroniDrive.calDelete(g.map[id].eid); delete g.map[id]; changed = true;
+    }
+  } catch (e) { toast('No se pudo actualizar Google Calendar: ' + e.message.slice(0, 80)); }
+  return changed;
+}
+
 function showConflict() {
   modal(`<h3 class="display">Alguien más editó estos datos</h3>
   <p class="small muted">Para no perder trabajo, elige qué versión conservar. Esta acción no se hace sola.</p>
@@ -146,7 +184,9 @@ V.hoy = () => {
     <section class="stack" style="gap:20px">
       <div class="card pink" style="gap:8px"><b class="small">Alertas próximas</b>
         ${upcoming.map(a => `<div style="background:#fff;border-radius:14px;padding:10px 14px;font-size:13px;display:flex;justify-content:space-between;gap:10px"><b>${esc(a.title)}</b><span class="muted">${a.s <= t ? 'Hoy' : lbl(a.s)} · ${a.time}</span><button class="btn small" data-snooze="${a.id}" title="Posponer 1 hora">⏰</button></div>`).join('') || '<span class="small">Sin alertas.</span>'}
-        <button class="btn small outline" id="btnNotif" style="align-self:flex-start">Activar avisos del navegador</button></div>
+        <div class="inline" style="flex-wrap:wrap"><button class="btn small outline" id="btnNotif">Avisos del navegador</button>
+        <button class="btn small ${calState() && calState().on ? 'primary' : 'outline'}" data-do="gcal">${calState() && calState().on ? '✓ Avisos en Google Calendar' : 'Avisos en Google Calendar'}</button></div>
+        <div class="small muted">Con Google Calendar el celular avisa aunque Croni esté cerrada.</div></div>
       <div class="card lil" style="flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between">
         <div><div class="display" style="font-size:22px">Resumen ${S.digestWeek ? 'semanal' : 'diario'}</div><div class="small" style="margin-top:4px">${esc(per)}</div></div>
         <button class="btn small" data-do="digest">Ver ${S.digestWeek ? 'diario' : 'semanal'}</button></div>
@@ -267,6 +307,22 @@ function readForm() {
 async function doAction(el) {
   const a = el.dataset.do;
   if (a === 'close') return closeModal();
+  if (a === 'gcal') {
+    if (S.mode !== 'drive') return toast('Entra con Gmail para usar Google Calendar.');
+    const g = calState();
+    if (g && g.on) {
+      if (!confirm('¿Apagar los avisos en Google Calendar? Se borrarán de tu calendario los eventos que Croni creó.')) return;
+      g.on = false; const ids = Object.values(g.map).map(x => x.eid); g.map = {};
+      commit('apagó los avisos en Google Calendar');
+      try { for (const id of ids) await CroniDrive.calDelete(id); toast('Eventos eliminados de tu calendario'); } catch (e) { toast('No se pudieron borrar todos los eventos'); }
+      return;
+    }
+    try { await CroniDrive.reauth(); } catch (e) { return toast('No se activó: ' + e.message); }
+    D.gcal = D.gcal || {}; D.gcal[S.user.email] = { on: true, map: {} };
+    commit('activó los avisos en Google Calendar');
+    toast('Listo: tus actividades se están creando en Google Calendar');
+    return;
+  }
   if (a === 'digest') { S.digestWeek = !S.digestWeek; return render(); }
   if (a === 'addSub') { readForm(); const v = $('#f_sub').value.trim(); if (v) FORM.subs.push({ t: v, d: false }); return paintForm(''); }
   if (a === 'delSub') { readForm(); FORM.subs.splice(+el.dataset.i, 1); return paintForm(''); }

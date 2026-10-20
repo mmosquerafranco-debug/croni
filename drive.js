@@ -2,7 +2,8 @@
 // Alcance "drive.file": Croni solo ve los archivos que él mismo crea. No hay base de datos propia.
 (function () {
   const C = window.CRONI_CONFIG;
-  const SCOPE = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile';
+  const SCOPE = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile';
+  const CAL = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
   const API = 'https://www.googleapis.com/drive/v3', UP = 'https://www.googleapis.com/upload/drive/v3';
   let token = null, tokenExp = 0, client = null, fileId = null, folderId = null, lastVersion = null;
 
@@ -97,6 +98,18 @@
     async share(email, role) {
       if (!fileId) throw new Error('Primero guarda los datos en Drive');
       await call(`${API}/files/${fileId}/permissions?sendNotificationEmail=true`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'user', role: role === 'reader' ? 'reader' : 'writer', emailAddress: email }) });
+    },
+    // Pide de nuevo el permiso (incluye Calendar). Debe llamarse directo desde un toque del usuario.
+    reauth() { return getToken('consent'); },
+    // Google Calendar: cada actividad es un evento con su aviso previo; el celular avisa con la app cerrada.
+    async calInsert(ev) { return (await call(CAL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ev) })).json(); },
+    async calPatch(id, ev) {
+      try { return await (await call(`${CAL}/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ev) })).json(); }
+      catch (e) { if (/ 404| 410/.test(e.message)) return null; throw e; }
+    },
+    async calDelete(id) {
+      try { await call(`${CAL}/${encodeURIComponent(id)}`, { method: 'DELETE' }); }
+      catch (e) { if (!/ 404| 410/.test(e.message)) throw e; }
     },
     async openShared(id) { fileId = id; const data = await (await call(`${API}/files/${id}?alt=media`)).json(); return data; }
   };
