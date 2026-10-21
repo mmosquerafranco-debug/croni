@@ -66,18 +66,68 @@ function commit(logMsg) {
   else if (logMsg) D.log.unshift(nowStamp() + ' · ' + logMsg);
   D.log = D.log.slice(0, 200);
   D.updated = new Date().toISOString();
-  localSave(); S.dirty = true;
+  localSave(); setDirty(true);
   if (S.mode === 'drive') { setSync(navigator.onLine ? 'pending' : 'offline'); clearTimeout(saveTimer); saveTimer = setTimeout(push, 1500); }
   render();
 }
+// "Hay cambios sin subir a Drive" se recuerda aunque se cierre la app, para no pisarlos al volver a abrir.
+const DK = LS + '.dirty';
+function setDirty(v) { S.dirty = v; try { v ? localStorage.setItem(DK, '1') : localStorage.removeItem(DK); } catch (e) {} }
+function needAuth(v) { S.needAuth = v; if (v) setSync('pending'); render(); }
+
+// Une los cambios locales sin subir con lo que hay en Drive, sin perder nada de ninguno de los dos.
+const BK = LS + '.base';
+function saveBase() { try { localStorage.setItem(BK, JSON.stringify(D)); } catch (e) {} }
+function merge(local, remote) {
+  let base = null; try { base = JSON.parse(localStorage.getItem(BK)); } catch (e) {}
+  const R =JSON.parse(JSON.stringify(remote)), idmap = {}, bmap = {};
+  R.bizs = R.bizs || []; R.acts = R.acts || []; R.notes = R.notes || []; R.done = R.done || []; R.log = R.log || []; R.nid = R.nid || 1;
+  (local.bizs || []).forEach(b => {
+    let rb = R.bizs.find(x => x.name.toLowerCase() === b.name.toLowerCase());
+    if (!rb) { rb = { ...b, id: 'b' + (R.nid++) }; R.bizs.push(rb); }
+    bmap[b.id] = rb.id;
+  });
+  const key = x => [x.title, x.s, x.time, x.biz].join('|');
+  (local.acts || []).forEach(a => {
+    const na = { ...a, biz: bmap[a.biz] || a.biz }, ex = R.acts.find(x => key(x) === key(na));
+    if (ex) {
+      // Solo gana lo local si esa actividad cambió en este dispositivo desde la última sincronización.
+      const ba = base && (base.acts || []).find(x => x.id === a.id);
+      if (ba && JSON.stringify(ba) !== JSON.stringify(a)) Object.assign(ex, { ...na, id: ex.id });
+      idmap[a.id] = ex.id;
+    }
+    else { na.id = R.nid++; R.acts.push(na); idmap[a.id] = na.id; }
+  });
+  (local.notes || []).forEach(n => { if (!R.notes.some(x => x.text === n.text)) R.notes.unshift({ ...n, id: R.nid++ }); });
+  (local.done || []).forEach(d => { const id = idmap[d.id]; if (id && !R.done.some(x => x.id === id && x.at === d.at)) R.done.push({ ...d, id, biz: bmap[d.biz] || d.biz }); });
+  R.log = Array.from(new Set([...(local.log || []), ...R.log])).sort().reverse().slice(0, 200);
+  R.gcal = R.gcal || {};
+  Object.keys(local.gcal || {}).forEach(em => {
+    if (R.gcal[em]) return;
+    const map = {}; Object.keys(local.gcal[em].map || {}).forEach(id => { if (idmap[id]) map[idmap[id]] = local.gcal[em].map[id]; });
+    R.gcal[em] = { on: local.gcal[em].on, map };
+  });
+  R.updated = new Date().toISOString();
+  return R;
+}
+// Lee Drive y lo junta con lo local. Si no hay archivo todavía, se creará al guardar.
+async function reconcile() {
+  const r = await CroniDrive.load();
+  if (r) { const merged = S.dirty; D = merged ? merge(D, r.data) : r.data; localSave(); if (!merged) saveBase(); render(); }
+}
+const isAuthErr = e => e && (e.auth || /bloque|popup|cancel|cargando/i.test(e.message || ''));
 async function push(force) {
   if (S.mode !== 'drive' || !S.dirty) return;
   if (!navigator.onLine) return setSync('offline');
   try {
-    setSync('saving'); await CroniDrive.save(D, force === true); S.dirty = false; setSync('ok');
-    if (await syncCal()) { S.dirty = true; localSave(); setTimeout(push, 500); }
+    setSync('saving');
+    if (!CroniDrive.known()) await reconcile(); // nunca crear un archivo nuevo sin antes buscar el existente
+    await CroniDrive.save(D, force === true); setDirty(false); saveBase(); needAuth(false); setSync('ok');
+    if (await syncCal()) { setDirty(true); localSave(); setTimeout(push, 500); }
   } catch (e) {
-    if (e.conflict) { setSync('conflict'); showConflict(); } else { setSync('err'); toast('No se pudo guardar en Drive. Se reintentará.'); setTimeout(push, 15000); }
+    if (e.conflict) { setSync('conflict'); showConflict(); }
+    else if (isAuthErr(e)) needAuth(true);
+    else { setSync('err'); toast('No se pudo guardar en Drive. Se reintentará.'); setTimeout(push, 15000); }
   }
 }
 // ---------- avisos en Google Calendar ----------
@@ -267,6 +317,9 @@ function render() {
   const v = $('#view'), f = document.activeElement && document.activeElement.id === 'search';
   v.innerHTML = D.bizs.length || S.tab === 'share' ? V[S.tab]() : `<section class="card"><div class="display h1">¡Bienvenida!</div><p>Crea tu primer negocio para empezar.</p><button class="btn primary" data-do="newBiz" style="align-self:flex-start">+ Negocio</button></section>`;
   if (f) { const i = $('#search'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+  const bn = $('#banner');
+  bn.hidden = !S.needAuth;
+  bn.innerHTML = S.needAuth ? '⚠ Tus cambios están guardados en este dispositivo pero aún no en tu Drive. <button class="btn small primary" data-do="reconnect" style="margin-left:8px">Reconectar con Google</button>' : '';
   paintSync();
 }
 
@@ -349,8 +402,13 @@ async function doAction(el) {
     if (!confirm('¿Compartir tu archivo de Croni con ' + mail + ' como ' + (role === 'reader' ? 'solo lectura' : 'editor') + '?')) return;
     try { await push(true); await CroniDrive.share(mail, role); D.people.push({ mail, role }); commit('invitó a ' + mail); toast('Invitación enviada'); } catch (e) { err.textContent = 'No se pudo compartir: ' + e.message; }
   }
-  if (a === 'useRemote') { const r = await CroniDrive.load(); if (r) { D = r.data; localSave(); S.dirty = false; setSync('ok'); } closeModal(); render(); }
-  if (a === 'useMine') { closeModal(); S.dirty = true; push(true); }
+  if (a === 'useRemote') { const r = await CroniDrive.load(); if (r) { D = r.data; localSave(); saveBase(); setDirty(false); setSync('ok'); } closeModal(); render(); }
+  if (a === 'useMine') { closeModal(); setDirty(true); push(true); }
+  if (a === 'reconnect') { // se llama directo desde un toque, para que el navegador permita la ventana de Google
+    const p = CroniDrive.connect();
+    try { await p; toast('Reconectado con tu Drive'); needAuth(false); reconnect(); } catch (e) { toast('No se pudo reconectar: ' + e.message.slice(0, 80)); }
+    return;
+  }
   if (a === 'logout') { closeModal(); CroniDrive.signOut(); localStorage.removeItem(LS); location.reload(); }
   if (a === 'exportJson') { const b = new Blob([JSON.stringify(D, null, 2)], { type: 'application/json' }), u = document.createElement('a'); u.href = URL.createObjectURL(b); u.download = 'croni-respaldo-' + today() + '.json'; u.click(); }
   if (a === 'exportCsv') { const rows = [['Título', 'Negocio', 'Desde', 'Hasta', 'Hora', 'Estado', 'Cuadrante']].concat(D.acts.map(x => [x.title, biz(x.biz).name, x.s, x.e, x.time, SL[x.st], QNAME[x.q]])); const b = new Blob(['﻿' + rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n')], { type: 'text/csv' }), u = document.createElement('a'); u.href = URL.createObjectURL(b); u.download = 'croni-' + today() + '.csv'; u.click(); }
@@ -414,16 +472,22 @@ async function boot() {
   if (saved === 'demo') { D = localLoad() || demo(); return enter('local'); }
   $('#login').hidden = false;
   if (!CroniDrive.configured()) $('#loginMsg').textContent = 'Falta configurar el ID de cliente de Google (ver LEEME.md). Mientras tanto puedes probar en modo local.';
-  const cached = localLoad(); if (saved === 'drive' && cached) { D = cached; S.user = JSON.parse(localStorage.getItem(LS + '.user') || 'null'); enter('drive', S.user); setSync(navigator.onLine ? 'pending' : 'offline'); S.dirty = false; reconnect(); }
+  const cached = localLoad();
+  if (saved === 'drive' && cached) {
+    // La primera vez con esta versión se asume que lo guardado en el dispositivo puede estar sin subir.
+    let first = false; try { first = !localStorage.getItem(LS + '.v2'); localStorage.setItem(LS + '.v2', '1'); } catch (e) {}
+    D = cached; S.user = JSON.parse(localStorage.getItem(LS + '.user') || 'null');
+    setDirty(first || localStorage.getItem(DK) === '1');
+    enter('drive', S.user); setSync(navigator.onLine ? 'pending' : 'offline'); reconnect();
+  }
 }
 async function reconnect() {
   if (!navigator.onLine) return setSync('offline');
   try {
-    const r = await CroniDrive.load();
-    if (r && !S.dirty) { D = r.data; localSave(); render(); }
-    setSync('ok');
+    await reconcile();
+    setSync('ok'); needAuth(false);
     if (S.dirty) push();
-  } catch (e) { setSync('pending'); }
+  } catch (e) { if (isAuthErr(e)) needAuth(true); else setSync('pending'); }
 }
 $('#btnDemo').onclick = () => { localStorage.setItem(LS + '.session', 'demo'); D = localLoad() || demo(); localSave(); enter('local'); };
 $('#btnLogin').onclick = async () => {
@@ -431,10 +495,11 @@ $('#btnLogin').onclick = async () => {
   try {
     $('#loginMsg').textContent = 'Conectando con Google…';
     const u = await CroniDrive.signIn(); const r = await CroniDrive.load();
-    D = r ? r.data : (localLoad() || blank());
-    localStorage.setItem(LS + '.session', 'drive'); localStorage.setItem(LS + '.user', JSON.stringify(u));
+    const cached = localLoad(), hadDirty = localStorage.getItem(DK) === '1';
+    D = r ? (cached && hadDirty ? merge(cached, r.data) : r.data) : (cached || blank());
+    localStorage.setItem(LS + '.session', 'drive'); localStorage.setItem(LS + '.user', JSON.stringify(u)); try { localStorage.setItem(LS + '.v2', '1'); } catch (e2) {}
     enter('drive', u); localSave();
-    if (!r) { S.dirty = true; push(); } else setSync('ok');
+    if (!r || (cached && hadDirty)) { setDirty(true); push(); } else setSync('ok');
   } catch (e) { $('#loginMsg').textContent = 'No se pudo entrar: ' + e.message; }
 };
 boot();

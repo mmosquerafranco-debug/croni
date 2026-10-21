@@ -46,8 +46,8 @@
   }
   const q = s => encodeURIComponent(s);
   async function findOne(query) {
-    const r = await (await call(`${API}/files?q=${q(query)}&fields=files(id,name,version,modifiedTime)&spaces=drive`)).json();
-    return r.files[0];
+    const r = await (await call(`${API}/files?q=${q(query)}&fields=files(id,name,version,modifiedTime)&spaces=drive&orderBy=${q('modifiedTime desc')}`)).json();
+    return r.files[0]; // si hubiera duplicados, gana el modificado más recientemente
   }
   async function ensureFolder() {
     if (folderId) return folderId;
@@ -101,6 +101,8 @@
     },
     // Pide de nuevo el permiso (incluye Calendar). Debe llamarse directo desde un toque del usuario.
     reauth() { return getToken('consent'); },
+    connect() { return getToken(''); },
+    known: () => !!fileId,
     // Google Calendar: cada actividad es un evento con su aviso previo; el celular avisa con la app cerrada.
     async calInsert(ev) { return (await call(CAL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ev) })).json(); },
     async calPatch(id, ev) {
