@@ -123,3 +123,5 @@ button,input,select,textarea{font-family:inherit;font-size:14px}
 .stk-ghost{position:fixed;z-index:50;pointer-events:none;transform:translate(-50%,-50%);filter:drop-shadow(0 6px 8px rgba(0,0,0,.25))}
 
 .g-row .stk{z-index:2}
+
+.row:has(.check.on){opacity:.75;background:#f1eef8}

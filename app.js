@@ -90,7 +90,7 @@ function commit(logMsg) {
   else if (logMsg) D.log.unshift(nowStamp() + ' · ' + logMsg);
   D.log = D.log.slice(0, 200);
   D.updated = new Date().toISOString();
-  localSave(); setDirty(true);
+  localSave(); setDirty(true); S.rev = (S.rev || 0) + 1;
   if (S.mode === 'drive') { setSync(navigator.onLine ? 'pending' : 'offline'); clearTimeout(saveTimer); saveTimer = setTimeout(push, 1500); }
   render();
 }
@@ -117,7 +117,8 @@ function merge(local, remote) {
     if (ex) {
       // Solo gana lo local si esa actividad cambió en este dispositivo desde la última sincronización.
       const ba = base && (base.acts || []).find(x => x.id === a.id);
-      if (ba && JSON.stringify(ba) !== JSON.stringify(a)) Object.assign(ex, { ...na, id: ex.id });
+      const localNewer = (a.u || '') > (ex.u || '') || (!a.u && !ex.u && ba && JSON.stringify(ba) !== JSON.stringify(a));
+      if (localNewer) Object.assign(ex, { ...na, id: ex.id });
       idmap[a.id] = ex.id;
     }
     else { na.id = R.nid++; R.acts.push(na); idmap[a.id] = na.id; }
@@ -158,7 +159,12 @@ async function push(force, tries) {
   try {
     setSync('saving');
     if (!CroniDrive.known()) await reconcile(); // nunca crear un archivo nuevo sin antes buscar el existente
-    await CroniDrive.save(D, force === true); setDirty(false); saveBase(); needAuth(false); setSync('ok');
+    // Se guarda una foto de lo que se sube: si mientras tanto hubo otro cambio, no se da por sincronizado.
+    const rev = S.rev || 0, snap = JSON.stringify(D);
+    await CroniDrive.save(D, force === true);
+    try { localStorage.setItem(BK, snap); } catch (e0) {}
+    needAuth(false);
+    if ((S.rev || 0) === rev) { setDirty(false); setSync('ok'); } else { setSync('pending'); setTimeout(push, 300); return; }
     if (await syncCal()) { setDirty(true); localSave(); setTimeout(push, 500); }
   } catch (e) {
     if (e.conflict) {
@@ -229,7 +235,8 @@ const BADGE = { done: ['Hecha', '#DDD6FB'], late: ['Vencida', '#F9A0AE'], risk: 
 const visible = () => D.acts.filter(a => !S.biz || a.biz === S.biz).sort((x, y) => x.s.localeCompare(y.s) || x.time.localeCompare(y.time));
 function setStatus(id, st) {
   const a = D.acts.find(x => x.id === id); if (!a) return;
-  const was = a.st; a.st = st;
+  const was = a.st; a.st = st; a.u = new Date().toISOString();
+  if (st !== 'done') D.done = D.done.filter(x => !(x.id === id && x.at === today())); // si se reabre, deja de contar como cerrada hoy
   if (st === 'done' && was !== 'done') {
     D.done.push({ id, biz: a.biz, at: today() });
     const step = { Diaria: 1, Semanal: 7, Mensual: 30 }[a.rep];
@@ -275,7 +282,10 @@ function actRow(a) {
 V.hoy = () => {
   const t = today(), acts = visible().filter(searchMatch);
   const backlog = (D.backlog || []).filter(b => (!S.biz || !b.biz || b.biz === S.biz) && (!S.q || b.text.toLowerCase().includes(S.q.toLowerCase())));
-  const items = acts.filter(a => (a.s <= t && a.e >= t) || (a.e < t && a.st !== 'done'));
+  // Pendientes (incluye vencidas) arriba; las atendidas/cerradas hoy abajo, tachadas, hasta que pase el día.
+  const closedToday = new Set((D.done || []).filter(x => x.at === t).map(x => x.id));
+  const items = acts.filter(a => a.st !== 'done' && ((a.s <= t && a.e >= t) || a.e < t));
+  const closed = acts.filter(a => a.st === 'done' && ((a.s <= t && a.e >= t) || closedToday.has(a.id)));
   const cf = conflicts();
   const upcoming = acts.filter(a => a.st !== 'done' && a.e >= t).slice(0, 4);
   const range = S.digestWeek ? [t, addDays(t, 6)] : [t, t];
@@ -283,9 +293,11 @@ V.hoy = () => {
   const dgText = biz => '';
   const per = D.bizs.map(b => { const l = dg.filter(a => a.biz === b.id); return l.length ? `${b.name}: ${l.length} (${l.filter(a => a.st === 'done').length} hechas)` : ''; }).filter(Boolean).join(' · ') || 'Sin actividades en este periodo.';
   return `<div class="grid"><section class="card">
-    <div><div class="display h1">Hoy</div><div class="small muted">${cap(longDate(t))} · ${items.length} actividades de ${S.biz ? 'este negocio' : 'todos tus negocios'}</div></div>
+    <div><div class="display h1">Hoy</div><div class="small muted">${cap(longDate(t))} · ${items.length} pendientes · ${closed.length} cerradas · ${S.biz ? 'este negocio' : 'todos tus negocios'}</div></div>
     ${cf.map(c => `<div class="banner">${esc(c)}</div>`).join('')}
-    <div class="stack">${items.map(actRow).join('') || '<div class="muted" style="text-align:center;padding:20px">Nada para hoy. ¡Disfruta!</div>'}</div></section>
+    <div class="stack">${items.map(actRow).join('') || '<div class="muted" style="text-align:center;padding:20px">Nada pendiente para hoy. ¡Disfruta!</div>'}</div>
+    <div class="display" style="font-size:20px;margin-top:6px">Atendido o cerrado <span class="small muted" style="font-family:Poppins">(${closed.length})</span></div>
+    <div class="stack">${closed.map(actRow).join('') || '<div class="muted small">Aún no has cerrado ninguna actividad hoy. Al marcar una con ✓ pasa aquí, tachada.</div>'}</div></section>
     <section class="stack" style="gap:20px">
       <div class="card pink" style="gap:8px"><b class="small">Alertas próximas</b>
         ${upcoming.map(a => `<div style="background:#fff;border-radius:14px;padding:10px 14px;font-size:13px;display:flex;justify-content:space-between;gap:10px"><b>${esc(a.title)}</b><span class="muted">${a.s <= t ? 'Hoy' : lbl(a.s)} · ${a.time}</span><button class="btn small" data-snooze="${a.id}" title="Posponer 1 hora">⏰</button></div>`).join('') || '<span class="small">Sin alertas.</span>'}
@@ -477,6 +489,7 @@ async function doAction(el) {
     if (!f.title) return paintForm('Escribe un título.');
     if (!f.s || !f.e) return paintForm('Elige las fechas.');
     if (f.e < f.s) return paintForm('La fecha final no puede ser anterior.');
+    f.u = new Date().toISOString();
     const bk = f.bk; delete f.bk; // si venía de "Por definir", sale de esa lista al programarla
     if (f.id) D.acts = D.acts.map(x => x.id === f.id ? f : x); else { f.id = D.nid++; D.acts.push(f); }
     if (bk) D.backlog = (D.backlog || []).filter(x => x.id !== bk);
