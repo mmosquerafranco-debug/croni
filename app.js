@@ -136,6 +136,12 @@ function merge(local, remote) {
   const lids = new Set((local.stickers || []).map(s => s.id)), bids = new Set(((base && base.stickers) || []).map(s => s.id));
   R.stickers = R.stickers.filter(s => !(bids.has(s.id) && !lids.has(s.id)));
   (local.stickers || []).forEach(s0 => { const s = s0.act && idmap[s0.act] ? { ...s0, act: idmap[s0.act] } : s0; const ex = R.stickers.find(x => x.id === s.id); if (ex) Object.assign(ex, s); else R.stickers.push(s); });
+  // Por definir: se unen por texto; lo que se quitó aquí desde la última sincronización también se quita en Drive.
+  R.backlog = R.backlog || [];
+  const bkKey = x => (x.text || '').toLowerCase();
+  const lk = new Set((local.backlog || []).map(bkKey)), bk0 = new Set(((base && base.backlog) || []).map(bkKey));
+  R.backlog = R.backlog.filter(x => !(bk0.has(bkKey(x)) && !lk.has(bkKey(x))));
+  (local.backlog || []).forEach(x => { if (!R.backlog.some(y => bkKey(y) === bkKey(x))) R.backlog.unshift({ ...x, id: R.nid++, biz: bmap[x.biz] || x.biz }); });
   R.updated = new Date().toISOString();
   return R;
 }
@@ -268,6 +274,7 @@ function actRow(a) {
 }
 V.hoy = () => {
   const t = today(), acts = visible().filter(searchMatch);
+  const backlog = (D.backlog || []).filter(b => (!S.biz || !b.biz || b.biz === S.biz) && (!S.q || b.text.toLowerCase().includes(S.q.toLowerCase())));
   const items = acts.filter(a => (a.s <= t && a.e >= t) || (a.e < t && a.st !== 'done'));
   const cf = conflicts();
   const upcoming = acts.filter(a => a.st !== 'done' && a.e >= t).slice(0, 4);
@@ -285,6 +292,13 @@ V.hoy = () => {
         <div class="inline" style="flex-wrap:wrap"><button class="btn small outline" id="btnNotif">Avisos del navegador</button>
         <button class="btn small ${calState() && calState().on ? 'primary' : 'outline'}" data-do="gcal">${calState() && calState().on ? '✓ Avisos en Google Calendar' : 'Avisos en Google Calendar'}</button></div>
         <div class="small muted">Con Google Calendar el celular avisa aunque Croni esté cerrada.</div></div>
+      <div class="card" style="gap:10px">
+        <div><div class="display" style="font-size:22px">Por definir</div><div class="small muted">Actividades futuras sin fecha. Anótalas aquí y, cuando las definas, pulsa 📅 para programarlas.</div></div>
+        <div class="inline" style="flex-wrap:wrap"><input class="inp" id="bkIn" placeholder="Ej: Cotizar nuevo proveedor" maxlength="120" style="flex:1;min-width:160px">
+          <select class="inp" id="bkBiz" style="width:auto"><option value="">Sin negocio</option>${D.bizs.map(b => `<option value="${b.id}" ${S.biz === b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select>
+          <button class="btn primary small" data-do="addBk">Agregar</button></div>
+        <div class="stack">${backlog.map(b => `<div class="row" style="border-left-color:${b.biz ? biz(b.biz).color : '#ccc'}"><div class="grow"><b>${esc(b.text)}</b><small>${b.biz ? esc(biz(b.biz).name) : 'Sin negocio'}</small></div><button class="icon-btn" data-bk-date="${b.id}" title="Programar con fecha" aria-label="Programar con fecha">📅</button><button class="icon-btn" data-bk-del="${b.id}" title="Quitar de la lista" aria-label="Quitar de la lista">🗑</button></div>`).join('') || '<div class="muted small">Nada pendiente por definir.</div>'}</div>
+      </div>
       <div class="card lil" style="flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between">
         <div><div class="display" style="font-size:22px">Resumen ${S.digestWeek ? 'semanal' : 'diario'}</div><div class="small" style="margin-top:4px">${esc(per)}</div></div>
         <button class="btn small" data-do="digest">Ver ${S.digestWeek ? 'diario' : 'semanal'}</button></div>
@@ -389,6 +403,7 @@ function render() {
   v.innerHTML = D.bizs.length || S.tab === 'share' ? V[S.tab]() : `<section class="card"><div class="display h1">¡Bienvenida!</div><p>Crea tu primer negocio para empezar.</p><button class="btn primary" data-do="newBiz" style="align-self:flex-start">+ Negocio</button></section>`;
   if (f) { const i = $('#search'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
   if (!D.stickers) D.stickers = [];
+  if (!D.backlog) D.backlog = [];
   const fab = $('#stkFab'), pn = $('#stkPanel'), onCr = S.tab === 'crono';
   fab.hidden = !onCr; pn.hidden = !(onCr && S.stkOpen);
   if (onCr) {
@@ -462,10 +477,17 @@ async function doAction(el) {
     if (!f.title) return paintForm('Escribe un título.');
     if (!f.s || !f.e) return paintForm('Elige las fechas.');
     if (f.e < f.s) return paintForm('La fecha final no puede ser anterior.');
+    const bk = f.bk; delete f.bk; // si venía de "Por definir", sale de esa lista al programarla
     if (f.id) D.acts = D.acts.map(x => x.id === f.id ? f : x); else { f.id = D.nid++; D.acts.push(f); }
+    if (bk) D.backlog = (D.backlog || []).filter(x => x.id !== bk);
     closeModal(); return commit((FORM.id ? 'guardó' : 'creó') + ' “' + f.title + '”');
   }
   if (a === 'delAct') { if (!confirm('¿Eliminar esta actividad? No se puede deshacer.')) return; D.acts = D.acts.filter(x => x.id !== FORM.id); D.stickers = (D.stickers || []).filter(s => s.act !== FORM.id); closeModal(); return commit('eliminó “' + FORM.title + '”'); }
+  if (a === 'addBk') {
+    const v = $('#bkIn').value.trim(); if (!v) return;
+    D.backlog = D.backlog || []; D.backlog.unshift({ id: D.nid++, text: v, biz: $('#bkBiz').value || '' });
+    return commit('anotó en Por definir “' + v + '”');
+  }
   if (a === 'addNote') { const v = $('#noteIn').value.trim(); if (!v) return; D.notes.unshift({ id: D.nid++, text: v }); return commit('añadió una nota'); }
   if (a === 'newBiz') {
     return modal(`<h3 class="display" style="margin:0">Nuevo negocio</h3><label>Nombre<input id="b_name" maxlength="40"></label>
@@ -493,12 +515,14 @@ async function doAction(el) {
 }
 
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-toggle],[data-stk-del],#stkFab,[data-del],[data-grange],[data-edit],[data-do],[data-biz],[data-tab],[data-move],[data-q],[data-calmode],[data-cal],[data-note2task],[data-delnote],[data-snooze],[data-newday],#btnNew,#btnUser,#btnExport,#btnNotif');
+  const t = e.target.closest('[data-toggle],[data-bk-date],[data-bk-del],[data-stk-del],#stkFab,[data-del],[data-grange],[data-edit],[data-do],[data-biz],[data-tab],[data-move],[data-q],[data-calmode],[data-cal],[data-note2task],[data-delnote],[data-snooze],[data-newday],#btnNew,#btnUser,#btnExport,#btnNotif');
   if (!t) return;
   const d = t.dataset;
   if (d.toggle) { e.stopPropagation(); const a = D.acts.find(x => x.id === +d.toggle); return setStatus(a.id, a.st === 'done' ? 'todo' : 'done'); }
   if (d.stkDel) { D.stickers = D.stickers.filter(s => s.id !== d.stkDel); S.stkSel = null; return commit(null); }
   if (t.id === 'stkFab') { S.stkOpen = !S.stkOpen; return render(); }
+  if (d.bkDate) { const it = (D.backlog || []).find(x => x.id === +d.bkDate); if (!it) return; if (!D.bizs.length) return toast('Primero crea un negocio.'); openForm(null); FORM.title = it.text; if (it.biz) FORM.biz = it.biz; FORM.bk = it.id; return paintForm(''); }
+  if (d.bkDel) { const it = (D.backlog || []).find(x => x.id === +d.bkDel); if (!it || !confirm('¿Quitar “' + it.text + '” de la lista?')) return; D.backlog = D.backlog.filter(x => x !== it); return commit('quitó de Por definir “' + it.text + '”'); }
   if (d.del) { e.stopPropagation(); return delAct(+d.del); }
   if (d.grange) { setRange(d.grange); return render(); }
   if (d.edit) return openForm(D.acts.find(x => x.id === +d.edit));
@@ -524,7 +548,7 @@ document.addEventListener('change', e => {
   if (e.target.id === 'gTo' && e.target.value) { S.gTo = e.target.value; if (S.gTo < S.gFrom) S.gFrom = S.gTo; render(); }
 });
 document.addEventListener('input', e => { if (e.target.id === 'search') { S.q = e.target.value; render(); } });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); if (e.key === 'Enter' && e.target.id === 'noteIn') doAction({ dataset: { do: 'addNote' } }); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); if (e.key === 'Enter' && e.target.id === 'noteIn') doAction({ dataset: { do: 'addNote' } }); if (e.key === 'Enter' && e.target.id === 'bkIn') doAction({ dataset: { do: 'addBk' } }); });
 
 // Arrastrar stickers: funciona con mouse y con el dedo. Se pegan al día (columna) donde se sueltan.
 let drag = null;
