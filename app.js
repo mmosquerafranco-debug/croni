@@ -116,8 +116,9 @@ async function reconcile() {
   if (r) { const merged = S.dirty; D = merged ? merge(D, r.data) : r.data; localSave(); if (!merged) saveBase(); render(); }
 }
 const isAuthErr = e => e && (e.auth || /bloque|popup|cancel|cargando/i.test(e.message || ''));
-async function push(force) {
+async function push(force, tries) {
   if (S.mode !== 'drive' || !S.dirty) return;
+  if (typeof force !== 'boolean') force = false;
   if (!navigator.onLine) return setSync('offline');
   try {
     setSync('saving');
@@ -125,7 +126,11 @@ async function push(force) {
     await CroniDrive.save(D, force === true); setDirty(false); saveBase(); needAuth(false); setSync('ok');
     if (await syncCal()) { setDirty(true); localSave(); setTimeout(push, 500); }
   } catch (e) {
-    if (e.conflict) { setSync('conflict'); showConflict(); }
+    if (e.conflict) {
+      // Primero se intenta unir automáticamente (no se pierde nada de ninguno); solo si insiste se pregunta.
+      if ((tries || 0) < 2) { try { const r = await CroniDrive.load(); if (r) { D = merge(D, r.data); localSave(); render(); } return push(false, (tries || 0) + 1); } catch (e2) {} }
+      setSync('conflict'); showConflict();
+    }
     else if (isAuthErr(e)) needAuth(true);
     else { setSync('err'); toast('No se pudo guardar en Drive. Se reintentará.'); setTimeout(push, 15000); }
   }

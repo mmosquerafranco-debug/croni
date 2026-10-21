@@ -62,6 +62,9 @@
     const url = id ? `${UP}/files/${id}?uploadType=multipart&fields=id,version` : `${UP}/files?uploadType=multipart&fields=id,version`;
     return (await call(url, { method, headers: { 'Content-Type': 'multipart/related; boundary=' + b }, body: data })).json();
   }
+  // La versión que devuelve la subida no siempre coincide con la que luego informa Drive (causaba falsos "conflictos"),
+  // así que después de guardar se vuelve a leer la versión real.
+  async function curVersion() { return (await (await call(`${API}/files/${fileId}?fields=version`)).json()).version; }
   window.CroniDrive = {
     configured: () => !!C.GOOGLE_CLIENT_ID,
     async signIn() {
@@ -85,14 +88,14 @@
       const fid = await ensureFolder();
       if (!fileId) {
         const r = await multipart({ name: C.DATA_FILE, parents: [fid], mimeType: 'application/json' }, data, 'POST');
-        fileId = r.id; lastVersion = r.version; return r;
+        fileId = r.id; lastVersion = await curVersion(); return r;
       }
       if (!force) {
         const m = await (await call(`${API}/files/${fileId}?fields=version`)).json();
         if (m.version !== lastVersion) { const e = new Error('conflict'); e.conflict = true; throw e; }
       }
       const r = await multipart({}, data, 'PATCH', fileId);
-      lastVersion = r.version; return r;
+      lastVersion = await curVersion(); return r;
     },
     // Compartir: apoya los permisos en los permisos de Drive (editor = writer, solo lectura = reader).
     async share(email, role) {
