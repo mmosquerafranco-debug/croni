@@ -212,6 +212,18 @@ function searchMatch(a) {
   return (a.title + ' ' + (a.obs || '') + ' ' + (a.tags || []).join(' ') + ' ' + biz(a.biz).name + ' ' + (a.owner || '')).toLowerCase().includes(q);
 }
 
+function delAct(id) {
+  const a = D.acts.find(x => x.id === id); if (!a) return;
+  if (!confirm('¿Eliminar la actividad “' + a.title + '”? No se puede deshacer.')) return;
+  D.acts = D.acts.filter(x => x.id !== id);
+  commit('eliminó “' + a.title + '”');
+}
+function setRange(k) {
+  const t = today();
+  if (k === 'month') { const d = parse(t); S.gFrom = toISO(new Date(d.getFullYear(), d.getMonth(), 1)); S.gTo = toISO(new Date(d.getFullYear(), d.getMonth() + 1, 0)); }
+  else { S.gFrom = t; S.gTo = addDays(t, +k - 1); }
+}
+
 // ---------- vistas ----------
 const V = {};
 function actRow(a) {
@@ -221,7 +233,8 @@ function actRow(a) {
     <div class="grow"><b style="${done ? 'text-decoration:line-through' : ''}">${esc(a.title)}</b>
     <small>${esc(biz(a.biz).name)} · ${a.time} · 🔔 ${a.lead} antes${a.rep !== 'No' ? ' · ↻ ' + a.rep : ''}</small>
     ${(a.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>
-    <span class="badge" style="background:${b[1]}">${b[0]}</span></div>`;
+    <span class="badge" style="background:${b[1]}">${b[0]}</span>
+    <button class="icon-btn" data-del="${a.id}" title="Eliminar actividad" aria-label="Eliminar actividad">🗑</button></div>`;
 }
 V.hoy = () => {
   const t = today(), acts = visible().filter(searchMatch);
@@ -248,12 +261,34 @@ V.hoy = () => {
     </section></div>`;
 };
 V.crono = () => {
-  const t = today(), days = Array.from({ length: 14 }, (_, i) => addDays(t, i));
-  const rows = visible().filter(searchMatch).filter(a => a.e >= t && a.s < addDays(t, 14));
-  return `<section class="card"><div class="display h1">Cronograma</div><div class="scroll-x"><div class="gantt">
-    <div class="g-head">${days.map(d => { const w = parse(d).getDay(); return `<div style="${d === t ? 'background:rgba(247,129,216,.25);border-radius:8px;font-weight:700' : w % 6 === 0 ? 'background:rgba(180,164,249,.15)' : ''}">${WD[(w + 6) % 7]}<br><b>${parse(d).getDate()}</b></div>`; }).join('')}</div>
-    <div class="g-grid">${days.map(() => '<div></div>').join('')}</div>
-    <div class="g-rows">${rows.map(a => { const s = Math.max(0, diff(a.s, t)), e = Math.min(13, diff(a.e, t)), n = e - s + 1; return `<div class="g-row"><button class="g-bar" data-edit="${a.id}" style="left:${s / 14 * 100}%;width:${n / 14 * 100}%;background:${biz(a.biz).color}"><span>${esc(a.title)}</span><span>${n}d</span></button></div>`; }).join('') || '<div class="muted">Sin actividades en las próximas 2 semanas.</div>'}</div></div></div></section>`;
+  const t = today();
+  if (!S.gFrom) setRange('14');
+  const from = S.gFrom; let to = S.gTo < from ? from : S.gTo;
+  if (diff(to, from) > 119) to = addDays(from, 119); // máximo 120 días para que se lea bien
+  const n = diff(to, from) + 1, days = Array.from({ length: n }, (_, i) => addDays(from, i));
+  const rows = visible().filter(searchMatch).filter(a => a.e >= from && a.s <= to);
+  const wide = n > 31;
+  const head = days.map(d => {
+    const dt = parse(d), w = dt.getDay(), first = dt.getDate() === 1 || d === from;
+    const bg = d === t ? 'background:rgba(247,129,216,.25);border-radius:8px;font-weight:700' : w % 6 === 0 ? 'background:rgba(180,164,249,.15)' : '';
+    return `<div style="${bg}">${wide ? '' : WD[(w + 6) % 7] + '<br>'}<b>${dt.getDate()}</b>${first ? `<br><i style="font-size:9px;font-style:normal;color:#7a5de8">${MESES[dt.getMonth()].slice(0, 3)}</i>` : ''}</div>`;
+  }).join('');
+  const bars = rows.map(a => {
+    const s = Math.max(0, diff(a.s, from)), e = Math.min(n - 1, diff(a.e, from)), len = e - s + 1;
+    return `<div class="g-row"><button class="g-bar" data-edit="${a.id}" title="${esc(a.title)}" style="left:${s / n * 100}%;width:${len / n * 100}%;background:${biz(a.biz).color};${a.st === 'done' ? 'opacity:.55' : ''}"><span>${esc(a.title)}</span><span>${len}d</span></button></div>`;
+  }).join('');
+  const preset = (k, label) => `<button class="btn small outline" data-grange="${k}">${label}</button>`;
+  return `<section class="card"><div class="display h1">Cronograma</div>
+    <div class="inline" style="flex-wrap:wrap;align-items:flex-end">
+      <label class="small" style="display:flex;flex-direction:column;gap:2px"><b>Desde</b><input type="date" class="inp" id="gFrom" value="${from}" style="width:auto"></label>
+      <label class="small" style="display:flex;flex-direction:column;gap:2px"><b>Hasta</b><input type="date" class="inp" id="gTo" value="${to}" style="width:auto"></label>
+      ${preset('14', '2 semanas')}${preset('month', 'Este mes')}${preset('30', '30 días')}${preset('90', '3 meses')}
+    </div>
+    <div class="small muted">${rows.length} actividades entre el ${lbl(from)} y el ${lbl(to)} (${n} días)</div>
+    <div class="scroll-x"><div class="gantt" style="min-width:${Math.max(720, n * (wide ? 26 : 44))}px">
+    <div class="g-head" style="grid-template-columns:repeat(${n},1fr)">${head}</div>
+    <div class="g-grid" style="grid-template-columns:repeat(${n},1fr)">${days.map(() => '<div></div>').join('')}</div>
+    <div class="g-rows">${bars || '<div class="muted">Sin actividades en este rango.</div>'}</div></div></div></section>`;
 };
 V.cal = () => {
   const m = S.calMode, an = parse(S.calAnchor), acts = visible().filter(searchMatch);
@@ -273,7 +308,7 @@ V.kanban = () => {
   const acts = visible().filter(searchMatch);
   return `<div class="kan">${ST.map((st, i) => `<section class="kcol" style="background:${['#F6F3FB', '#DDD6FB', '#FFD6F3'][i]}"><b>${SL[st]} · ${acts.filter(a => a.st === st).length}</b>
     ${acts.filter(a => a.st === st).map(a => `<div class="kcard" style="border-left-color:${biz(a.biz).color}"><div class="info" data-edit="${a.id}" style="cursor:pointer"><b>${esc(a.title)}</b><small class="muted">${esc(biz(a.biz).name)} · ${lbl(a.s)}${(a.subs || []).length ? ' · ' + a.subs.filter(x => x.d).length + '/' + a.subs.length : ''}</small></div>
-    <div class="acts"><button data-move="${a.id}|${ST[Math.max(0, i - 1)]}" aria-label="Atrás">←</button><button data-move="${a.id}|${ST[Math.min(2, i + 1)]}" aria-label="Adelante">→</button></div></div>`).join('')}</section>`).join('')}</div>`;
+    <div class="acts"><button data-move="${a.id}|${ST[Math.max(0, i - 1)]}" aria-label="Atrás">←</button><button data-move="${a.id}|${ST[Math.min(2, i + 1)]}" aria-label="Adelante">→</button><button data-del="${a.id}" title="Eliminar actividad" aria-label="Eliminar actividad">🗑</button></div></div>`).join('')}</section>`).join('')}</div>`;
 };
 V.matriz = () => {
   const acts = visible().filter(searchMatch).filter(a => a.st !== 'done');
@@ -420,10 +455,12 @@ async function doAction(el) {
 }
 
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-toggle],[data-edit],[data-do],[data-biz],[data-tab],[data-move],[data-q],[data-calmode],[data-cal],[data-note2task],[data-delnote],[data-snooze],[data-newday],#btnNew,#btnUser,#btnExport,#btnNotif');
+  const t = e.target.closest('[data-toggle],[data-del],[data-grange],[data-edit],[data-do],[data-biz],[data-tab],[data-move],[data-q],[data-calmode],[data-cal],[data-note2task],[data-delnote],[data-snooze],[data-newday],#btnNew,#btnUser,#btnExport,#btnNotif');
   if (!t) return;
   const d = t.dataset;
   if (d.toggle) { e.stopPropagation(); const a = D.acts.find(x => x.id === +d.toggle); return setStatus(a.id, a.st === 'done' ? 'todo' : 'done'); }
+  if (d.del) { e.stopPropagation(); return delAct(+d.del); }
+  if (d.grange) { setRange(d.grange); return render(); }
   if (d.edit) return openForm(D.acts.find(x => x.id === +d.edit));
   if (d.do) return doAction(t);
   if (d.biz !== undefined) { S.biz = d.biz || null; return render(); }
@@ -442,6 +479,10 @@ document.addEventListener('click', e => {
   if (t.id === 'btnUser') return modal(`<h3 class="display" style="margin:0">${esc(S.user ? S.user.name : 'Modo local')}</h3><p class="small muted">${S.user ? esc(S.user.email) : 'Tus datos están solo en este dispositivo.'}</p><button class="btn outline" id="btnExport2" data-do="exportJson">Exportar respaldo</button><button class="btn danger" data-do="logout">Cerrar sesión</button><button class="btn" data-do="close">Cerrar</button>`);
 });
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
+document.addEventListener('change', e => {
+  if (e.target.id === 'gFrom' && e.target.value) { S.gFrom = e.target.value; if (S.gTo < S.gFrom) S.gTo = S.gFrom; render(); }
+  if (e.target.id === 'gTo' && e.target.value) { S.gTo = e.target.value; if (S.gTo < S.gFrom) S.gFrom = S.gTo; render(); }
+});
 document.addEventListener('input', e => { if (e.target.id === 'search') { S.q = e.target.value; render(); } });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); if (e.key === 'Enter' && e.target.id === 'noteIn') doAction({ dataset: { do: 'addNote' } }); });
 

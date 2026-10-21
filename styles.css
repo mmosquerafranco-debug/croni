@@ -105,3 +105,7 @@ button,input,select,textarea{font-family:inherit;font-size:14px}
   .tabs{position:sticky;bottom:0}
 }
 @media(min-width:701px) and (max-width:1000px){.kan{grid-template-columns:repeat(3,1fr)}}
+
+.icon-btn{border:0;background:var(--bg);border-radius:999px;width:28px;height:28px;cursor:pointer;flex:none;padding:0;font-size:13px}
+.icon-btn:hover,.kcard .acts button[data-del]:hover{background:var(--red)}
+.g-head,.g-grid{display:grid}
