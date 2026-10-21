@@ -272,7 +272,7 @@ V.cal = () => {
 V.kanban = () => {
   const acts = visible().filter(searchMatch);
   return `<div class="kan">${ST.map((st, i) => `<section class="kcol" style="background:${['#F6F3FB', '#DDD6FB', '#FFD6F3'][i]}"><b>${SL[st]} · ${acts.filter(a => a.st === st).length}</b>
-    ${acts.filter(a => a.st === st).map(a => `<div class="kcard" style="border-left-color:${biz(a.biz).color}"><b data-edit="${a.id}" style="cursor:pointer">${esc(a.title)}</b><small class="muted">${esc(biz(a.biz).name)} · ${lbl(a.s)}${(a.subs || []).length ? ' · ' + a.subs.filter(x => x.d).length + '/' + a.subs.length + ' subtareas' : ''}</small>
+    ${acts.filter(a => a.st === st).map(a => `<div class="kcard" style="border-left-color:${biz(a.biz).color}"><div class="info" data-edit="${a.id}" style="cursor:pointer"><b>${esc(a.title)}</b><small class="muted">${esc(biz(a.biz).name)} · ${lbl(a.s)}${(a.subs || []).length ? ' · ' + a.subs.filter(x => x.d).length + '/' + a.subs.length : ''}</small></div>
     <div class="acts"><button data-move="${a.id}|${ST[Math.max(0, i - 1)]}" aria-label="Atrás">←</button><button data-move="${a.id}|${ST[Math.min(2, i + 1)]}" aria-label="Adelante">→</button></div></div>`).join('')}</section>`).join('')}</div>`;
 };
 V.matriz = () => {
