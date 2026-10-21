@@ -33,6 +33,7 @@ const STK = {
   listo: `<circle cx="32" cy="32" r="22" fill="#9ED88E" ${L_}/><path d="M21 33l8 8 15-17" fill="none" stroke="#111" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>`
 };
 const STKN = { sobre: 'Correo', monedas: 'Pagos', trofeo: 'Logro', reloj: 'Urgente', nota: 'Nota', corazon: 'Favorito', estrella: 'Destacado', avion: 'Viaje', dado: 'Suerte', alerta: 'Aviso', idea: 'Idea', bandera: 'Meta', peon: 'Persona', listo: 'Listo' };
+const stkOne = (s, from, n, attached) => `<div class="stk ${S.stkSel === s.id ? 'sel' : ''}" data-stk-id="${s.id}" title="${esc(STKN[s.k] || '')}" style="left:${(diff(s.d, from) + .5) / n * 100}%;top:${attached ? -4 : s.y}px">${stkSvg(s.k, 46)}${S.stkSel === s.id ? `<button class="x" data-stk-del="${s.id}" aria-label="Quitar sticker">✕</button>` : ''}</div>`;
 const stkSvg = (k, size) => `<svg viewBox="0 0 64 64" width="${size || 46}" height="${size || 46}" aria-hidden="true">${STK[k] || ''}</svg>`;
 
 // ---------- fechas (todas como 'YYYY-MM-DD') ----------
@@ -134,7 +135,7 @@ function merge(local, remote) {
   R.stickers = R.stickers || [];
   const lids = new Set((local.stickers || []).map(s => s.id)), bids = new Set(((base && base.stickers) || []).map(s => s.id));
   R.stickers = R.stickers.filter(s => !(bids.has(s.id) && !lids.has(s.id)));
-  (local.stickers || []).forEach(s => { const ex = R.stickers.find(x => x.id === s.id); if (ex) Object.assign(ex, s); else R.stickers.push(s); });
+  (local.stickers || []).forEach(s0 => { const s = s0.act && idmap[s0.act] ? { ...s0, act: idmap[s0.act] } : s0; const ex = R.stickers.find(x => x.id === s.id); if (ex) Object.assign(ex, s); else R.stickers.push(s); });
   R.updated = new Date().toISOString();
   return R;
 }
@@ -244,6 +245,7 @@ function delAct(id) {
   const a = D.acts.find(x => x.id === id); if (!a) return;
   if (!confirm('¿Eliminar la actividad “' + a.title + '”? No se puede deshacer.')) return;
   D.acts = D.acts.filter(x => x.id !== id);
+  D.stickers = (D.stickers || []).filter(s => s.act !== id);
   commit('eliminó “' + a.title + '”');
 }
 function setRange(k) {
@@ -303,7 +305,7 @@ V.crono = () => {
   }).join('');
   const bars = rows.map(a => {
     const s = Math.max(0, diff(a.s, from)), e = Math.min(n - 1, diff(a.e, from)), len = e - s + 1;
-    return `<div class="g-row"><button class="g-bar" data-edit="${a.id}" title="${esc(a.title)}" style="left:${s / n * 100}%;width:${len / n * 100}%;background:${biz(a.biz).color};${a.st === 'done' ? 'opacity:.55' : ''}"><span>${esc(a.title)}</span><span>${len}d</span></button></div>`;
+    return `<div class="g-row" data-act="${a.id}"><button class="g-bar" data-edit="${a.id}" title="${esc(a.title)}" style="left:${s / n * 100}%;width:${len / n * 100}%;background:${biz(a.biz).color};${a.st === 'done' ? 'opacity:.55' : ''}"><span>${esc(a.title)}</span><span>${len}d</span></button>${(D.stickers || []).filter(s => s.act === a.id && s.d >= from && s.d <= to).map(s => stkOne(s, from, n, true)).join('')}</div>`;
   }).join('');
   const preset = (k, label) => `<button class="btn small outline" data-grange="${k}">${label}</button>`;
   return `<section class="card"><div class="display h1">Cronograma</div>
@@ -317,7 +319,7 @@ V.crono = () => {
     <div class="g-head" style="grid-template-columns:repeat(${n},1fr)">${head}</div>
     <div class="g-grid" style="grid-template-columns:repeat(${n},1fr)">${days.map(() => '<div></div>').join('')}</div>
     <div class="g-rows">${bars || '<div class="muted">Sin actividades en este rango.</div>'}</div>
-    <div class="g-stk">${(D.stickers || []).filter(s => s.d >= from && s.d <= to).map(s => `<div class="stk ${S.stkSel === s.id ? 'sel' : ''}" data-stk-id="${s.id}" title="${esc(STKN[s.k] || '')}" style="left:${(diff(s.d, from) + .5) / n * 100}%;top:${s.y}px">${stkSvg(s.k, 46)}${S.stkSel === s.id ? `<button class="x" data-stk-del="${s.id}" aria-label="Quitar sticker">✕</button>` : ''}</div>`).join('')}</div></div></div></section>`;
+    <div class="g-stk">${(D.stickers || []).filter(s => !s.act && s.d >= from && s.d <= to).map(s => stkOne(s, from, n, false)).join('')}</div></div></div></section>`;
 };
 V.cal = () => {
   const m = S.calMode, an = parse(S.calAnchor), acts = visible().filter(searchMatch);
@@ -463,7 +465,7 @@ async function doAction(el) {
     if (f.id) D.acts = D.acts.map(x => x.id === f.id ? f : x); else { f.id = D.nid++; D.acts.push(f); }
     closeModal(); return commit((FORM.id ? 'guardó' : 'creó') + ' “' + f.title + '”');
   }
-  if (a === 'delAct') { if (!confirm('¿Eliminar esta actividad? No se puede deshacer.')) return; D.acts = D.acts.filter(x => x.id !== FORM.id); closeModal(); return commit('eliminó “' + FORM.title + '”'); }
+  if (a === 'delAct') { if (!confirm('¿Eliminar esta actividad? No se puede deshacer.')) return; D.acts = D.acts.filter(x => x.id !== FORM.id); D.stickers = (D.stickers || []).filter(s => s.act !== FORM.id); closeModal(); return commit('eliminó “' + FORM.title + '”'); }
   if (a === 'addNote') { const v = $('#noteIn').value.trim(); if (!v) return; D.notes.unshift({ id: D.nid++, text: v }); return commit('añadió una nota'); }
   if (a === 'newBiz') {
     return modal(`<h3 class="display" style="margin:0">Nuevo negocio</h3><label>Nombre<input id="b_name" maxlength="40"></label>
@@ -551,8 +553,12 @@ function endDrag(e, cancel) {
   const g = document.querySelector('.gantt'); if (!g || !inside(g)) return;
   const r = g.getBoundingClientRect(), n = +g.dataset.n, idx = Math.min(n - 1, Math.floor((e.clientX - r.left) / r.width * n));
   const day = addDays(g.dataset.from, idx), y = Math.max(34, Math.min(r.height - 46, Math.round(e.clientY - r.top - 23)));
+  // Si se suelta sobre una fila, el sticker queda pegado a esa actividad y se mueve con ella.
+  const row = Array.from(document.querySelectorAll('.g-row[data-act]')).find(el => { const q = el.getBoundingClientRect(); return e.clientY >= q.top - 6 && e.clientY <= q.bottom + 6; });
+  const act = row ? +row.dataset.act : null;
   const cur = d.id && D.stickers.find(s => s.id === d.id);
-  if (cur) { cur.d = day; cur.y = y; } else D.stickers.push({ id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), k: d.k, d: day, y });
+  if (cur) { cur.d = day; cur.y = y; if (act) cur.act = act; else delete cur.act; }
+  else { const s = { id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), k: d.k, d: day, y }; if (act) s.act = act; D.stickers.push(s); }
   S.stkSel = null; commit(null);
 }
 document.addEventListener('pointerup', e => endDrag(e, false));
