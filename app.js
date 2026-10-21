@@ -12,6 +12,29 @@ const LEADS = { '10 min': 10, '1 hora': 60, '1 día': 1440 };
 const PALETTE = ['#F781D8', '#B4A4F9', '#F7D981', '#9ED88E', '#7FC8F8', '#FF9F6B'];
 const TABS = [['hoy', 'Hoy'], ['crono', 'Cronograma'], ['cal', 'Calendario'], ['kanban', 'Tablero'], ['matriz', 'Matriz'], ['notas', 'Notas'], ['insights', 'Insights'], ['share', 'Compartir']];
 
+// ---------- stickers (ilustraciones propias en SVG, estilo plano con ojitos) ----------
+const E_ = (x, y, r) => `<circle cx="${x}" cy="${y}" r="${r}" fill="#fff" stroke="#111" stroke-width="1.6"/><circle cx="${x + r * .25}" cy="${y + r * .15}" r="${r * .45}" fill="#111"/>`;
+const eyes_ = (cx, y, gap, r) => E_(cx - gap, y, r) + E_(cx + gap, y, r);
+const L_ = 'stroke="#111" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"';
+const STK = {
+  sobre: `<rect x="6" y="14" width="52" height="38" rx="7" fill="#F781D8" ${L_}/><path d="M8 18L32 36 56 18" fill="none" ${L_}/>${eyes_(32, 40, 8, 5)}`,
+  monedas: [46, 36, 26].map(y => `<path d="M12 ${y}v-6a20 7 0 0 1 40 0v6a20 7 0 0 1-40 0z" fill="#F7D981" ${L_}/>`).join('') + `<ellipse cx="32" cy="20" rx="20" ry="7" fill="#FFE9A8" ${L_}/>${eyes_(32, 19, 6, 4)}`,
+  trofeo: `<path d="M18 14h-8q0 12 10 14M46 14h8q0 12-10 14" fill="none" ${L_}/><path d="M18 10h28v16q0 12-14 14-14-2-14-14z" fill="#F7D981" ${L_}/><path d="M32 40v8" ${L_}/><rect x="22" y="48" width="20" height="7" rx="2" fill="#B4A4F9" ${L_}/>${eyes_(32, 24, 6, 4.5)}`,
+  reloj: `<rect x="27" y="6" width="10" height="6" rx="2" fill="#B4A4F9" ${L_}/><circle cx="32" cy="36" r="22" fill="#fff" ${L_}/><path d="M32 36V22M32 36l9 5" fill="none" ${L_}/><circle cx="32" cy="36" r="2.5" fill="#111"/><path d="M3 28h8M1 37h9M4 46h7" ${L_}/>`,
+  nota: `<path d="M14 8h26l11 11v35H14z" fill="#F7D981" ${L_}/><path d="M40 8v11h11" fill="#FFE9A8" ${L_}/><path d="M20 24h12M20 30h20" fill="none" ${L_}/>${eyes_(31, 42, 7, 5)}`,
+  corazon: `<path d="M32 54C10 38 8 22 18 14c7-5 13-1 14 5 1-6 7-10 14-5 10 8 8 24-14 40z" fill="#F781D8" ${L_}/>${eyes_(32, 30, 7, 5)}`,
+  estrella: `<path d="M32 6l7.5 16 17.5 2-13 12 3.5 17L32 44l-15.5 9L20 36 7 24l17.5-2z" fill="#F7D981" ${L_}/>${eyes_(32, 31, 6, 4.5)}`,
+  avion: `<path d="M6 30L58 8 44 56 31 38z" fill="#DDD6FB" ${L_}/><path d="M31 38L58 8" fill="none" ${L_}/><path d="M31 38l-2 14 8-9" fill="#B4A4F9" ${L_}/>`,
+  dado: `<rect x="10" y="10" width="44" height="44" rx="10" fill="#fff" ${L_}/><circle cx="23" cy="23" r="4" fill="#F781D8"/><circle cx="32" cy="32" r="4" fill="#F781D8"/><circle cx="41" cy="41" r="4" fill="#F781D8"/><circle cx="41" cy="23" r="4" fill="#111"/><circle cx="23" cy="41" r="4" fill="#111"/>`,
+  alerta: `<path d="M8 10h48v32H30L18 54V42H8z" fill="#B4A4F9" ${L_}/><text x="32" y="36" text-anchor="middle" font-size="26" font-weight="700" font-family="Poppins,sans-serif" fill="#111">!!</text>`,
+  idea: `<path d="M32 3v4M10 12l3 3M54 12l-3 3" fill="none" ${L_}/><circle cx="32" cy="26" r="16" fill="#F7D981" ${L_}/><path d="M25 42h14v8a4 4 0 0 1-4 4h-6a4 4 0 0 1-4-4z" fill="#DDD6FB" ${L_}/>${eyes_(32, 25, 6, 4.5)}`,
+  bandera: `<path d="M16 8v50" ${L_}/><path d="M16 10h34l-8 10 8 10H16z" fill="#F781D8" ${L_}/>${eyes_(31, 20, 5, 3.5)}`,
+  peon: `<circle cx="32" cy="16" r="10" fill="#B4A4F9" ${L_}/><path d="M32 26L16 56h32z" fill="#B4A4F9" ${L_}/><rect x="22" y="13" width="20" height="6" rx="3" fill="#fff" ${L_}/><circle cx="30" cy="16" r="2" fill="#111"/><circle cx="38" cy="16" r="2" fill="#111"/>`,
+  listo: `<circle cx="32" cy="32" r="22" fill="#9ED88E" ${L_}/><path d="M21 33l8 8 15-17" fill="none" stroke="#111" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>`
+};
+const STKN = { sobre: 'Correo', monedas: 'Pagos', trofeo: 'Logro', reloj: 'Urgente', nota: 'Nota', corazon: 'Favorito', estrella: 'Destacado', avion: 'Viaje', dado: 'Suerte', alerta: 'Aviso', idea: 'Idea', bandera: 'Meta', peon: 'Persona', listo: 'Listo' };
+const stkSvg = (k, size) => `<svg viewBox="0 0 64 64" width="${size || 46}" height="${size || 46}" aria-hidden="true">${STK[k] || ''}</svg>`;
+
 // ---------- fechas (todas como 'YYYY-MM-DD') ----------
 const pad = n => String(n).padStart(2, '0');
 const toISO = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
@@ -107,6 +130,11 @@ function merge(local, remote) {
     const map = {}; Object.keys(local.gcal[em].map || {}).forEach(id => { if (idmap[id]) map[idmap[id]] = local.gcal[em].map[id]; });
     R.gcal[em] = { on: local.gcal[em].on, map };
   });
+  // Stickers: se unen por id; si se quitó uno aquí desde la última sincronización, también se quita en Drive.
+  R.stickers = R.stickers || [];
+  const lids = new Set((local.stickers || []).map(s => s.id)), bids = new Set(((base && base.stickers) || []).map(s => s.id));
+  R.stickers = R.stickers.filter(s => !(bids.has(s.id) && !lids.has(s.id)));
+  (local.stickers || []).forEach(s => { const ex = R.stickers.find(x => x.id === s.id); if (ex) Object.assign(ex, s); else R.stickers.push(s); });
   R.updated = new Date().toISOString();
   return R;
 }
@@ -284,11 +312,12 @@ V.crono = () => {
       <label class="small" style="display:flex;flex-direction:column;gap:2px"><b>Hasta</b><input type="date" class="inp" id="gTo" value="${to}" style="width:auto"></label>
       ${preset('14', '2 semanas')}${preset('month', 'Este mes')}${preset('30', '30 días')}${preset('90', '3 meses')}
     </div>
-    <div class="small muted">${rows.length} actividades entre el ${lbl(from)} y el ${lbl(to)} (${n} días)</div>
-    <div class="scroll-x"><div class="gantt" style="min-width:${Math.max(720, n * (wide ? 26 : 44))}px">
+    <div class="small muted">${rows.length} actividades entre el ${lbl(from)} y el ${lbl(to)} (${n} días) · Toca ⭐ a la derecha y arrastra stickers hasta el día que quieras</div>
+    <div class="scroll-x"><div class="gantt" data-from="${from}" data-n="${n}" style="min-width:${Math.max(720, n * (wide ? 26 : 44))}px">
     <div class="g-head" style="grid-template-columns:repeat(${n},1fr)">${head}</div>
     <div class="g-grid" style="grid-template-columns:repeat(${n},1fr)">${days.map(() => '<div></div>').join('')}</div>
-    <div class="g-rows">${bars || '<div class="muted">Sin actividades en este rango.</div>'}</div></div></div></section>`;
+    <div class="g-rows">${bars || '<div class="muted">Sin actividades en este rango.</div>'}</div>
+    <div class="g-stk">${(D.stickers || []).filter(s => s.d >= from && s.d <= to).map(s => `<div class="stk ${S.stkSel === s.id ? 'sel' : ''}" data-stk-id="${s.id}" title="${esc(STKN[s.k] || '')}" style="left:${(diff(s.d, from) + .5) / n * 100}%;top:${s.y}px">${stkSvg(s.k, 46)}${S.stkSel === s.id ? `<button class="x" data-stk-del="${s.id}" aria-label="Quitar sticker">✕</button>` : ''}</div>`).join('')}</div></div></div></section>`;
 };
 V.cal = () => {
   const m = S.calMode, an = parse(S.calAnchor), acts = visible().filter(searchMatch);
@@ -357,6 +386,13 @@ function render() {
   const v = $('#view'), f = document.activeElement && document.activeElement.id === 'search';
   v.innerHTML = D.bizs.length || S.tab === 'share' ? V[S.tab]() : `<section class="card"><div class="display h1">¡Bienvenida!</div><p>Crea tu primer negocio para empezar.</p><button class="btn primary" data-do="newBiz" style="align-self:flex-start">+ Negocio</button></section>`;
   if (f) { const i = $('#search'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+  if (!D.stickers) D.stickers = [];
+  const fab = $('#stkFab'), pn = $('#stkPanel'), onCr = S.tab === 'crono';
+  fab.hidden = !onCr; pn.hidden = !(onCr && S.stkOpen);
+  if (onCr) {
+    fab.innerHTML = stkSvg('estrella', 34);
+    pn.innerHTML = '<div class="small muted" style="text-align:center">Arrastra al día</div>' + Object.keys(STK).map(k => `<div class="stk-item" data-stk-new="${k}" title="${STKN[k]}">${stkSvg(k, 46)}</div>`).join('');
+  }
   const bn = $('#banner');
   bn.hidden = !S.needAuth;
   bn.innerHTML = S.needAuth ? '⚠ Tus cambios están guardados en este dispositivo pero aún no en tu Drive. <button class="btn small primary" data-do="reconnect" style="margin-left:8px">Reconectar con Google</button>' : '';
@@ -455,10 +491,12 @@ async function doAction(el) {
 }
 
 document.addEventListener('click', e => {
-  const t = e.target.closest('[data-toggle],[data-del],[data-grange],[data-edit],[data-do],[data-biz],[data-tab],[data-move],[data-q],[data-calmode],[data-cal],[data-note2task],[data-delnote],[data-snooze],[data-newday],#btnNew,#btnUser,#btnExport,#btnNotif');
+  const t = e.target.closest('[data-toggle],[data-stk-del],#stkFab,[data-del],[data-grange],[data-edit],[data-do],[data-biz],[data-tab],[data-move],[data-q],[data-calmode],[data-cal],[data-note2task],[data-delnote],[data-snooze],[data-newday],#btnNew,#btnUser,#btnExport,#btnNotif');
   if (!t) return;
   const d = t.dataset;
   if (d.toggle) { e.stopPropagation(); const a = D.acts.find(x => x.id === +d.toggle); return setStatus(a.id, a.st === 'done' ? 'todo' : 'done'); }
+  if (d.stkDel) { D.stickers = D.stickers.filter(s => s.id !== d.stkDel); S.stkSel = null; return commit(null); }
+  if (t.id === 'stkFab') { S.stkOpen = !S.stkOpen; return render(); }
   if (d.del) { e.stopPropagation(); return delAct(+d.del); }
   if (d.grange) { setRange(d.grange); return render(); }
   if (d.edit) return openForm(D.acts.find(x => x.id === +d.edit));
@@ -485,6 +523,40 @@ document.addEventListener('change', e => {
 });
 document.addEventListener('input', e => { if (e.target.id === 'search') { S.q = e.target.value; render(); } });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); if (e.key === 'Enter' && e.target.id === 'noteIn') doAction({ dataset: { do: 'addNote' } }); });
+
+// Arrastrar stickers: funciona con mouse y con el dedo. Se pegan al día (columna) donde se sueltan.
+let drag = null;
+document.addEventListener('pointerdown', e => {
+  if (e.target.closest('[data-stk-del]')) return;
+  const nw = e.target.closest('[data-stk-new]'), ex = e.target.closest('[data-stk-id]');
+  if (!nw && !ex) return;
+  const cur = ex && D.stickers.find(s => s.id === ex.dataset.stkId), k = nw ? nw.dataset.stkNew : cur && cur.k;
+  if (!k) return;
+  e.preventDefault();
+  drag = { k, id: ex ? ex.dataset.stkId : null, x0: e.clientX, y0: e.clientY, moved: false, ghost: null };
+});
+document.addEventListener('pointermove', e => {
+  if (!drag) return;
+  if (!drag.moved && Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) < 6) return;
+  drag.moved = true;
+  if (!drag.ghost) { const g = document.createElement('div'); g.className = 'stk-ghost'; g.innerHTML = stkSvg(drag.k, 56); document.body.appendChild(g); drag.ghost = g; }
+  drag.ghost.style.left = e.clientX + 'px'; drag.ghost.style.top = e.clientY + 'px';
+});
+function endDrag(e, cancel) {
+  if (!drag) return; const d = drag; drag = null; if (d.ghost) d.ghost.remove();
+  if (cancel) return;
+  if (!d.moved) { if (d.id) { S.stkSel = S.stkSel === d.id ? null : d.id; render(); } return; }
+  const inside = (el, r = el && el.getBoundingClientRect()) => el && !el.hidden && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+  if (d.id && inside($('#stkPanel'))) { D.stickers = D.stickers.filter(s => s.id !== d.id); S.stkSel = null; return commit(null); } // soltar sobre el panel = quitar
+  const g = document.querySelector('.gantt'); if (!g || !inside(g)) return;
+  const r = g.getBoundingClientRect(), n = +g.dataset.n, idx = Math.min(n - 1, Math.floor((e.clientX - r.left) / r.width * n));
+  const day = addDays(g.dataset.from, idx), y = Math.max(34, Math.min(r.height - 46, Math.round(e.clientY - r.top - 23)));
+  const cur = d.id && D.stickers.find(s => s.id === d.id);
+  if (cur) { cur.d = day; cur.y = y; } else D.stickers.push({ id: 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), k: d.k, d: day, y });
+  S.stkSel = null; commit(null);
+}
+document.addEventListener('pointerup', e => endDrag(e, false));
+document.addEventListener('pointercancel', e => endDrag(e, true));
 
 // ---------- notificaciones (mientras la app está abierta o instalada) ----------
 async function enableNotif() {

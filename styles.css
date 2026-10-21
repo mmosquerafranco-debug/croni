@@ -109,3 +109,15 @@ button,input,select,textarea{font-family:inherit;font-size:14px}
 .icon-btn{border:0;background:var(--bg);border-radius:999px;width:28px;height:28px;cursor:pointer;flex:none;padding:0;font-size:13px}
 .icon-btn:hover,.kcard .acts button[data-del]:hover{background:var(--red)}
 .g-head,.g-grid{display:grid}
+
+/* stickers */
+.g-stk{position:absolute;inset:0;pointer-events:none;z-index:3}
+.stk{position:absolute;transform:translateX(-50%);pointer-events:auto;touch-action:none;cursor:grab;width:46px;height:46px;filter:drop-shadow(0 2px 3px rgba(0,0,0,.18));user-select:none;-webkit-user-select:none}
+.stk svg{display:block}
+.stk.sel{outline:2px dashed var(--lil);outline-offset:2px;border-radius:12px}
+.stk .x{position:absolute;top:-10px;right:-10px;width:22px;height:22px;border-radius:50%;background:#111;color:#fff;border:0;font-size:11px;padding:0;cursor:pointer}
+.stk-fab{position:fixed;right:12px;top:50%;transform:translateY(-50%);width:54px;height:54px;border-radius:50%;background:var(--pink);border:0;box-shadow:0 4px 14px rgba(0,0,0,.2);cursor:pointer;z-index:15;display:flex;align-items:center;justify-content:center;padding:0}
+.stk-panel{position:fixed;right:76px;top:50%;transform:translateY(-50%);width:92px;max-height:72vh;overflow-y:auto;background:#fff;border-radius:24px;padding:10px 8px;box-shadow:0 6px 22px rgba(0,0,0,.2);z-index:15;display:flex;flex-direction:column;align-items:center;gap:6px}
+.stk-item{touch-action:none;cursor:grab;width:62px;height:62px;flex:none;background:var(--bg);border-radius:18px;display:flex;align-items:center;justify-content:center;user-select:none;-webkit-user-select:none}
+.stk-item:hover{background:var(--pink-l)}
+.stk-ghost{position:fixed;z-index:50;pointer-events:none;transform:translate(-50%,-50%);filter:drop-shadow(0 6px 8px rgba(0,0,0,.25))}
