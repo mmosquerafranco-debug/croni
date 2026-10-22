@@ -194,19 +194,49 @@ function calEvent(a) {
     reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: LEADS[a.lead] }] }
   };
 }
-// Devuelve true si cambió el registro (para guardarlo en Drive).
+// Borra eventos repetidos que Croni creó antes (misma actividad, mismo día y hora) y deja uno solo.
+async function dedupeCal(g) {
+  const from = new Date(Date.now() - 60 * 864e5).toISOString();
+  const items = await CroniDrive.calList('Creado por Croni', from);
+  const groups = {};
+  items.filter(e => e.status !== 'cancelled' && (e.description || '').includes('Creado por Croni')).forEach(e => {
+    const k = (e.summary || '') + '|' + ((e.start && (e.start.dateTime || e.start.date)) || '');
+    (groups[k] = groups[k] || []).push(e);
+  });
+  const mapped = new Set(Object.values(g.map).map(x => x.eid));
+  let changed = false;
+  for (const k of Object.keys(groups)) {
+    const list = groups[k]; if (list.length < 2) continue;
+    const keep = list.find(e => mapped.has(e.id)) || list.find(e => e.id.startsWith('croniact')) || list[0];
+    for (const e of list) if (e !== keep) { await CroniDrive.calDelete(e.id); changed = true; }
+    Object.keys(g.map).forEach(id => { if (list.some(e => e.id === g.map[id].eid) && g.map[id].eid !== keep.id) g.map[id].eid = keep.id; });
+    groups[k] = [keep];
+  }
+  // Las actividades sin evento registrado adoptan el que ya existe en Calendar (mismo título y hora), en vez de crear otro.
+  const when = ev => new Date(ev.start.dateTime).getTime();
+  const free = Object.values(groups).flat().filter(e => !Object.values(g.map).some(x => x.eid === e.id));
+  D.acts.filter(x => x.st !== 'done' && x.e >= today() && !g.map[x.id]).forEach(x => {
+    const ev = calEvent(x), hit = free.find(e => e.summary === ev.summary && e.start && e.start.dateTime && when(e) === when(ev));
+    if (hit) { g.map[x.id] = { eid: hit.id, h: '' }; free.splice(free.indexOf(hit), 1); changed = true; }
+  });
+  return changed;
+}
+// Devuelve true si cambió el registro (para guardarlo en Drive). Nunca corre dos veces a la vez.
+let calBusy = false, calAgain = false;
 async function syncCal() {
   const g = calState();
   if (!g || !g.on || S.mode !== 'drive' || !navigator.onLine) return false;
-  let changed = false;
+  if (calBusy) { calAgain = true; return false; }
+  calBusy = true; let changed = false;
   try {
+    if (!S.calDeduped) { S.calDeduped = true; changed = await dedupeCal(g); }
     const t = today(), want = {};
     D.acts.filter(a => a.st !== 'done' && a.e >= t).forEach(a => want[a.id] = a);
     for (const id of Object.keys(want)) {
       const a = want[id], h = JSON.stringify(calEvent(a)), cur = g.map[id];
       if (cur && cur.h === h) continue;
       let r = cur ? await CroniDrive.calPatch(cur.eid, calEvent(a)) : null;
-      if (!r) r = await CroniDrive.calInsert(calEvent(a));
+      if (!r) r = await CroniDrive.calUpsert('croniact' + id, calEvent(a));
       g.map[id] = { eid: r.id, h }; changed = true;
     }
     for (const id of Object.keys(g.map)) {
@@ -214,6 +244,8 @@ async function syncCal() {
       await CroniDrive.calDelete(g.map[id].eid); delete g.map[id]; changed = true;
     }
   } catch (e) { toast('No se pudo actualizar Google Calendar: ' + e.message.slice(0, 80)); }
+  calBusy = false;
+  if (calAgain) { calAgain = false; changed = (await syncCal()) || changed; }
   return changed;
 }
 
@@ -651,7 +683,7 @@ async function reconnect() {
   try {
     await reconcile();
     setSync('ok'); needAuth(false);
-    if (S.dirty) push();
+    if (S.dirty) push(); else if (await syncCal()) { setDirty(true); localSave(); push(); } // al abrir: limpia repetidos en Calendar y deja todo al día
   } catch (e) { if (isAuthErr(e)) needAuth(true); else setSync('pending'); }
 }
 $('#btnDemo').onclick = () => { localStorage.setItem(LS + '.session', 'demo'); D = localLoad() || demo(); localSave(); enter('local'); };

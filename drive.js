@@ -107,7 +107,23 @@
     connect() { return getToken(''); },
     known: () => !!fileId,
     // Google Calendar: cada actividad es un evento con su aviso previo; el celular avisa con la app cerrada.
-    async calInsert(ev) { return (await call(CAL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ev) })).json(); },
+    // Crear con un id fijo por actividad: si por cualquier motivo se intenta crear dos veces, Calendar rechaza la
+    // copia (409) y en vez de duplicar se actualiza el evento que ya existía.
+    async calUpsert(id, ev) {
+      try { return await (await call(CAL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ev, id }) })).json(); }
+      catch (e) {
+        if (!/ 409/.test(e.message)) throw e;
+        try { return await (await call(`${CAL}/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ev, status: 'confirmed' }) })).json(); }
+        catch (e2) { // si ese evento fue borrado a mano y no se puede reactivar, se crea con otro id
+          const alt = id + 'r' + Math.random().toString(32).slice(2, 8);
+          return (await call(CAL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ev, id: alt }) })).json();
+        }
+      }
+    },
+    async calList(q, timeMin) {
+      const r = await (await call(`${CAL}?q=${encodeURIComponent(q)}&timeMin=${encodeURIComponent(timeMin)}&maxResults=250&singleEvents=true&orderBy=startTime`)).json();
+      return r.items || [];
+    },
     async calPatch(id, ev) {
       try { return await (await call(`${CAL}/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(ev) })).json(); }
       catch (e) { if (/ 404| 410/.test(e.message)) return null; throw e; }
