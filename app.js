@@ -113,7 +113,11 @@ function merge(local, remote) {
   });
   const key = x => [x.title, x.s, x.time, x.biz].join('|');
   (local.acts || []).forEach(a => {
-    const na = { ...a, biz: bmap[a.biz] || a.biz }, ex = R.acts.find(x => key(x) === key(na));
+    const na = { ...a, biz: bmap[a.biz] || a.biz };
+    // Primero se reconoce por id (así cambiar negocio, fecha u hora edita la actividad en vez de duplicarla);
+    // si no, por título+fecha+hora+negocio.
+    const baseHas = base && (base.acts || []).some(x => x.id === a.id);
+    const ex = R.acts.find(x => x.id === a.id && (x.title === a.title || baseHas)) || R.acts.find(x => key(x) === key(na));
     if (ex) {
       // Solo gana lo local si esa actividad cambió en este dispositivo desde la última sincronización.
       const ba = base && (base.acts || []).find(x => x.id === a.id);
@@ -489,11 +493,11 @@ async function doAction(el) {
     if (!f.title) return paintForm('Escribe un título.');
     if (!f.s || !f.e) return paintForm('Elige las fechas.');
     if (f.e < f.s) return paintForm('La fecha final no puede ser anterior.');
-    f.u = new Date().toISOString();
+    const isNew = !f.id; f.u = new Date().toISOString();
     const bk = f.bk; delete f.bk; // si venía de "Por definir", sale de esa lista al programarla
     if (f.id) D.acts = D.acts.map(x => x.id === f.id ? f : x); else { f.id = D.nid++; D.acts.push(f); }
     if (bk) D.backlog = (D.backlog || []).filter(x => x.id !== bk);
-    closeModal(); return commit((FORM.id ? 'guardó' : 'creó') + ' “' + f.title + '”');
+    closeModal(); return commit((isNew ? 'creó' : 'guardó') + ' “' + f.title + '”');
   }
   if (a === 'delAct') { if (!confirm('¿Eliminar esta actividad? No se puede deshacer.')) return; D.acts = D.acts.filter(x => x.id !== FORM.id); D.stickers = (D.stickers || []).filter(s => s.act !== FORM.id); closeModal(); return commit('eliminó “' + FORM.title + '”'); }
   if (a === 'addBk') {
