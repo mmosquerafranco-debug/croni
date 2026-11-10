@@ -96,6 +96,8 @@ function commit(logMsg) {
 }
 // "Hay cambios sin subir a Drive" se recuerda aunque se cierre la app, para no pisarlos al volver a abrir.
 const DK = LS + '.dirty';
+// Borra lo guardado en este navegador (datos, sesión, usuario). Se usa al cerrar sesión o al entrar otra persona.
+function clearLocal() { try { Object.keys(localStorage).filter(k => k === LS || k.startsWith(LS + '.')).forEach(k => localStorage.removeItem(k)); } catch (e) {} }
 function setDirty(v) { S.dirty = v; try { v ? localStorage.setItem(DK, '1') : localStorage.removeItem(DK); } catch (e) {} }
 function needAuth(v) { S.needAuth = v; if (v) setSync('pending'); render(); }
 
@@ -106,6 +108,16 @@ function merge(local, remote) {
   let base = null; try { base = JSON.parse(localStorage.getItem(BK)); } catch (e) {}
   const R =JSON.parse(JSON.stringify(remote)), idmap = {}, bmap = {};
   R.bizs = R.bizs || []; R.acts = R.acts || []; R.notes = R.notes || []; R.done = R.done || []; R.log = R.log || []; R.nid = R.nid || 1;
+  // Lo que se borró aquí desde la última sincronización (y sigue en Drive) también se borra en Drive, no resucita.
+  if (base) {
+    const lAct = new Set((local.acts || []).map(x => x.id)), lBiz = new Set((local.bizs || []).map(b => b.name.toLowerCase()));
+    const deadAct = new Set((base.acts || []).filter(x => !lAct.has(x.id)).map(x => x.id));
+    const deadBiz = new Set((base.bizs || []).filter(b => !lBiz.has(b.name.toLowerCase())).map(b => b.id));
+    R.acts = R.acts.filter(x => !deadAct.has(x.id) && !deadBiz.has(x.biz));
+    R.bizs = R.bizs.filter(b => !deadBiz.has(b.id));
+    const lNotes = new Set((local.notes || []).map(n => n.text));
+    R.notes = R.notes.filter(n => !((base.notes || []).some(bn => bn.text === n.text) && !lNotes.has(n.text)));
+  }
   (local.bizs || []).forEach(b => {
     let rb = R.bizs.find(x => x.name.toLowerCase() === b.name.toLowerCase());
     if (!rb) { rb = { ...b, id: 'b' + (R.nid++) }; R.bizs.push(rb); }
@@ -310,7 +322,7 @@ function actRow(a) {
   return `<div class="row" style="border-left-color:${c}" data-edit="${a.id}">
     <button class="check ${done ? 'on' : ''}" data-toggle="${a.id}" aria-label="Marcar">${done ? '✓' : ''}</button>
     <div class="grow"><b style="${done ? 'text-decoration:line-through' : ''}">${esc(a.title)}</b>
-    <small>${esc(biz(a.biz).name)} · ${a.time} · 🔔 ${a.lead} antes${a.rep !== 'No' ? ' · ↻ ' + a.rep : ''}</small>
+    <small>${esc(biz(a.biz).name)} · ${a.time}<span class="lead-txt"> · 🔔 ${a.lead} antes</span>${a.rep !== 'No' ? ' · ↻ ' + a.rep : ''}</small>
     ${(a.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>
     <span class="badge" style="background:${b[1]}">${b[0]}</span>
     <button class="icon-btn" data-del="${a.id}" title="Eliminar actividad" aria-label="Eliminar actividad">🗑</button></div>`;
@@ -445,6 +457,7 @@ function render() {
   $('#bizBar').innerHTML = `<button class="chip" data-biz="" style="background:${!S.biz ? '#111' : '#fff'};color:${!S.biz ? '#fff' : '#111'}">Todos los negocios</button>` +
     D.bizs.map(b => `<button class="chip" data-biz="${b.id}" style="border-color:${b.color};background:${S.biz === b.id ? b.color : '#fff'}"><i style="background:${b.color}"></i>${esc(b.name)}</button>`).join('') +
     `<button class="chip" data-do="newBiz" style="border-style:dashed">+ Negocio</button>` +
+    (S.biz && D.bizs.some(b => b.id === S.biz) ? `<button class="chip" data-do="delBiz" style="border-color:#e0386b;color:#c0264a" title="Eliminar este negocio">🗑 Eliminar “${esc(biz(S.biz).name)}”</button>` : '') +
     `<input class="inp" id="search" placeholder="Buscar…" value="${esc(S.q || '')}" style="max-width:200px;border-radius:999px;margin-left:auto">`;
   $('#tabs').innerHTML = TABS.map(t => `<button class="tab ${S.tab === t[0] ? 'on' : ''}" data-tab="${t[0]}">${t[1]}</button>`).join('');
   const v = $('#view'), f = document.activeElement && document.activeElement.id === 'search';
@@ -558,7 +571,22 @@ async function doAction(el) {
     try { await p; toast('Reconectado con tu Drive'); needAuth(false); reconnect(); } catch (e) { toast('No se pudo reconectar: ' + e.message.slice(0, 80)); }
     return;
   }
-  if (a === 'logout') { closeModal(); CroniDrive.signOut(); localStorage.removeItem(LS); location.reload(); }
+  if (a === 'logout') {
+    closeModal();
+    if (S.mode === 'drive' && S.dirty && navigator.onLine) { toast('Guardando tus cambios antes de salir…'); try { await push(); } catch (e) {} }
+    if (S.mode === 'drive' && S.dirty && !confirm('Hay cambios que aún no se subieron a tu Drive y se perderán al cerrar sesión. ¿Cerrar sesión de todos modos?')) return;
+    CroniDrive.signOut(); clearLocal(); location.reload(); return;
+  }
+  if (a === 'delBiz') {
+    const b = D.bizs.find(x => x.id === S.biz); if (!b) return;
+    const acts = D.acts.filter(x => x.biz === b.id), bk = (D.backlog || []).filter(x => x.biz === b.id);
+    const extra = acts.length || bk.length ? '\n\nTambién se eliminarán ' + acts.length + ' actividades y ' + bk.length + ' pendientes de “Por definir” de este negocio, con sus stickers y sus eventos de Google Calendar.' : '';
+    if (!confirm('¿Eliminar el negocio “' + b.name + '”?' + extra + '\n\nNo se puede deshacer.')) return;
+    const ids = new Set(acts.map(x => x.id));
+    D.bizs = D.bizs.filter(x => x.id !== b.id); D.acts = D.acts.filter(x => x.biz !== b.id);
+    D.backlog = (D.backlog || []).filter(x => x.biz !== b.id); D.stickers = (D.stickers || []).filter(s => !ids.has(s.act));
+    S.biz = null; commit('eliminó el negocio “' + b.name + '”'); return;
+  }
   if (a === 'exportJson') { const b = new Blob([JSON.stringify(D, null, 2)], { type: 'application/json' }), u = document.createElement('a'); u.href = URL.createObjectURL(b); u.download = 'croni-respaldo-' + today() + '.json'; u.click(); }
   if (a === 'exportCsv') { const rows = [['Título', 'Negocio', 'Desde', 'Hasta', 'Hora', 'Estado', 'Cuadrante']].concat(D.acts.map(x => [x.title, biz(x.biz).name, x.s, x.e, x.time, SL[x.st], QNAME[x.q]])); const b = new Blob(['﻿' + rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(',')).join('\n')], { type: 'text/csv' }), u = document.createElement('a'); u.href = URL.createObjectURL(b); u.download = 'croni-' + today() + '.csv'; u.click(); }
 }
@@ -692,7 +720,12 @@ $('#btnLogin').onclick = async () => {
   try {
     $('#loginMsg').textContent = 'Conectando con Google…';
     const u = await CroniDrive.signIn(); const r = await CroniDrive.load();
-    const cached = localLoad(), hadDirty = localStorage.getItem(DK) === '1';
+    // Lo guardado en este navegador solo se reutiliza si es de la MISMA cuenta; si entra otra persona (o venía de la
+    // prueba sin conectar) se descarta, para que cada quien vea únicamente su propio Drive.
+    let prev = null; try { prev = JSON.parse(localStorage.getItem(LS + '.user')); } catch (e3) {}
+    const same = !!(prev && prev.email === u.email && localStorage.getItem(LS + '.session') === 'drive');
+    if (!same) clearLocal();
+    const cached = same ? localLoad() : null, hadDirty = same && localStorage.getItem(DK) === '1';
     D = r ? (cached && hadDirty ? merge(cached, r.data) : r.data) : (cached || blank());
     localStorage.setItem(LS + '.session', 'drive'); localStorage.setItem(LS + '.user', JSON.stringify(u)); try { localStorage.setItem(LS + '.v2', '1'); } catch (e2) {}
     enter('drive', u); localSave();
